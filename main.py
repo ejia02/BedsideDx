@@ -2,6 +2,8 @@ import streamlit as st
 from openai import OpenAI
 import pandas as pd
 
+# what patient diangosis, pE, or patient history would change your mind about this patient? 
+
 stored_password = st.secrets["passwords"]["app_password"]
 st.title("AI-PE: Enhanced Bedside Physical Exam")  # always visible
 
@@ -21,7 +23,7 @@ def check_password():
 
 # Lock screen
 if not st.session_state.authenticated:
-    st.text_input("Enter Password (hint it's ai-pe):", type="password", key="password_input")
+    st.text_input("Enter Password:", type="password", key="password_input")
     st.button("Unlock", on_click=check_password)
     st.info("🔒 Enter the password to continue.")
     st.stop()  # nothing below runs until authenticated
