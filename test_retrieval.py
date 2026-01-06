@@ -1,37 +1,23 @@
-from retrieval import retrieve_relevant_entries, generate_recommendations
+import json
+import numpy as np
+import faiss
 from sentence_transformers import SentenceTransformer
 
-# Paths for the FAISS index and metadata file
-INDEX_PATH = "/Users/courtneyreamer/Documents/Fellowship/BedsideEvalAI/combined_aortic_stenosis_index.faiss"
-METADATA_PATH = "/Users/courtneyreamer/Documents/Fellowship/BedsideEvalAI/combined_aortic_stenosis.csv"
+INDEX_PATH = "aipe_mcgee71_local.faiss"
+META_PATH = "aipe_mcgee71_local_meta.json"
 
-# Load the API key from Streamlit secrets
-api_key = st.secrets["openai"]["api_key"]
+model = SentenceTransformer("all-MiniLM-L6-v2")
+index = faiss.read_index(INDEX_PATH)
+meta = json.load(open(META_PATH))
 
-# Initialize the SentenceTransformer model
-model = SentenceTransformer('all-MiniLM-L6-v2')
+def search(query, k=5):
+    qv = model.encode([query], normalize_embeddings=True)
+    qv = np.array(qv, dtype="float32")
+    scores, idxs = index.search(qv, k)
+    for score, idx in zip(scores[0], idxs[0]):
+        r = meta[idx]
+        print(f"\nscore={score:.3f}  {r['Condition']} — {r['Finding']}")
+        print(f"LR+={r.get('LR_plus')}  LR-={r.get('LR_minus')}  Pretest={r.get('Pretest_low')}-{r.get('Pretest_high')}")
+        # print(r["text_for_embedding"])
 
-# Define a sample query
-query = "What are the findings associated with delayed carotid artery upstroke?"
-
-# Test the retrieval function
-print("Testing retrieval...")
-try:
-    relevant_entries = retrieve_relevant_entries(query, INDEX_PATH, METADATA_PATH, model, top_k=5)
-
-    # Print the retrieved entries
-    if relevant_entries:
-        print("Retrieved relevant entries:")
-        for i, entry in enumerate(relevant_entries, 1):
-            print(f"{i}. Type: {entry['type']}, Content: {entry['content']}")
-
-        # Test GPT recommendations
-        print("\nGenerating GPT recommendations...")
-        clinical_note = "Patient presents with dyspnea and fatigue, suspected aortic stenosis."
-        recommendations = generate_recommendations(clinical_note, relevant_entries, api_key)
-        print("Generated Recommendations:")
-        print(recommendations)
-    else:
-        print("No relevant entries found. Please check your query or data.")
-except Exception as e:
-    print(f"Error during retrieval or GPT recommendation generation: {e}")
+search("appendicitis rebound tenderness", k=5)
