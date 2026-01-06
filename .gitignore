@@ -20,3 +20,11 @@ secret.env
 *.faiss
 *_meta.json
 
+# Extracted physical exam data
+Extracted_phys_exam*.csv
+Extracted_phys_exam*.xlsx
+
+# Appendix source data
+AppendixChp71*.csv
+AppendixChp71*.xlsx
+AppendixChp71*.pdf
