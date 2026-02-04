@@ -156,7 +156,7 @@ def load_custom_css():
         width: calc(100% - var(--sidebar-width, 0px));
         background: #ffffff;
         border-top: 1px solid var(--clinic-border);
-        padding: 0.75rem 1.25rem 1rem;
+        padding: 0.5rem;
         z-index: 100;
         transition: left 0.2s ease, width 0.2s ease;
     }
@@ -196,7 +196,7 @@ def load_custom_css():
         resize: none;
         align-self: flex-end;
         box-sizing: border-box;
-        width: calc(100% - 2.5rem) !important;
+        width: calc(100% - 4rem) !important;
     }
     div[data-testid="stChatInput"] textarea:focus {
         border-color: var(--clinic-accent);
@@ -204,7 +204,7 @@ def load_custom_css():
     }
     div[data-testid="stChatInput"] button {
         position: absolute !important;
-        right: 0.5rem;
+        right: 1rem;
         bottom: 0.5rem;
         top: 50%;
         transform: translateY(-50%);
