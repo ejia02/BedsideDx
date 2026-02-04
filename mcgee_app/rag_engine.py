@@ -188,6 +188,7 @@ class MongoDBClient:
             
             # Ensure indexes exist
             self._ensure_indexes()
+            self._check_embedding_fields()
             
             return True
             
@@ -225,6 +226,22 @@ class MongoDBClient:
             logger.warning(f"Could not create indexes (may already exist): {e}")
         except Exception as e:
             logger.warning(f"Index creation warning: {e}")
+
+    def _check_embedding_fields(self) -> None:
+        """Warn if expected embedding fields are missing."""
+        try:
+            if not self.collection.find_one({"ebm_box_label_embedding": {"$exists": True}}, {"_id": 1}):
+                logger.warning(
+                    "No ebm_box_label_embedding field found. "
+                    "Disease vector search will fall back to regex. "
+                    "Run migrate_ebm_label_embeddings.py or reingest."
+                )
+            if not self.collection.find_one({"embedding": {"$exists": True}}, {"_id": 1}):
+                logger.warning(
+                    "No embedding field found. Vector search will fall back to text/regex search."
+                )
+        except Exception as e:
+            logger.warning(f"Could not verify embedding fields: {e}")
     
     def close(self) -> None:
         """Close MongoDB connection."""
@@ -655,9 +672,12 @@ def categorize_evidence(evidence: List[Dict[str, Any]]) -> Dict[str, List[Dict[s
         "other": []
     }
     
+    missing_lr_count = 0
     for item in evidence:
         # Extract LR values from nested or flat schema
         lr_pos, lr_neg = _extract_lr_values(item)
+        if lr_pos is None and lr_neg is None:
+            missing_lr_count += 1
         
         categorized = False
         
@@ -685,6 +705,13 @@ def categorize_evidence(evidence: List[Dict[str, Any]]) -> Dict[str, List[Dict[s
         # Everything else
         if not categorized:
             categories["other"].append(item)
+    
+    if missing_lr_count:
+        logger.info(
+            "Evidence items missing LR values: %s/%s",
+            missing_lr_count,
+            len(evidence)
+        )
     
     return categories
 
@@ -1343,6 +1370,20 @@ def parse_strategy_json(content: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
             if general_disease["rule_in"] or general_disease["rule_out"]:
                 section["diseases"] = [general_disease]
 
+    # Remove diseases with no maneuvers and drop empty sections
+    pruned_sections = []
+    for section in result.get("sections", []):
+        diseases = section.get("diseases", [])
+        if diseases:
+            section["diseases"] = [
+                disease for disease in diseases
+                if isinstance(disease, dict) and (disease.get("rule_in") or disease.get("rule_out"))
+            ]
+        if section.get("diseases"):
+            pruned_sections.append(section)
+    
+    result["sections"] = pruned_sections
+
     return result
 
 
@@ -1519,15 +1560,17 @@ def run_rag_pipeline(
             # Also do text search for symptoms
             symptom_evidence = mongo_client.text_search(symptoms, limit=10)
             
-            # Merge and deduplicate using exam_evidence_free schema fields
+            # Merge and deduplicate using nested schema fields (source.ebm_box_label)
+            combined = []
             seen_findings = set()
             for item in evidence + symptom_evidence:
-                finding_key = f"{item.get('ebm_box_label', '')}:{item.get('original_finding', '')}"
+                diagnosis, finding = _extract_diagnosis_and_finding(item)
+                finding_key = f"{diagnosis}:{finding}"
                 if finding_key not in seen_findings:
                     seen_findings.add(finding_key)
+                    combined.append(item)
             
-            evidence = [e for e in (evidence + symptom_evidence) 
-                       if f"{e.get('ebm_box_label', '')}:{e.get('original_finding', '')}" in seen_findings]
+            evidence = combined
             
             mongo_client.close()
         

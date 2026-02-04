@@ -63,6 +63,12 @@ def load_custom_css():
         --clinic-positive: #1e7b57;
         --clinic-negative: #b91c1c;
         --sidebar-width: 0px;
+        --chat-input-font-size: 1rem;
+        --chat-input-line-height: 1.4;
+        --chat-input-padding-y: 0.8rem;
+        --chat-input-min-height: 3.25rem;
+        --chat-input-max-height: 7.2rem;
+        --chat-input-container-max-height: 9.5rem;
     }
 
     body {
@@ -80,7 +86,7 @@ def load_custom_css():
     }
     .block-container {
         padding-top: 3.25rem;
-        padding-bottom: 6rem;
+        padding-bottom: var(--chat-input-container-max-height);
         max-width: 1200px;
     }
 
@@ -158,19 +164,54 @@ def load_custom_css():
         max-width: 1200px;
         width: 100%;
         margin: 0 auto;
+        display: flex !important;
+        align-items: flex-end !important;
+    }
+    div[data-testid="stChatInput"] form {
+        display: flex !important;
+        align-items: flex-end !important;
+        width: 100%;
+        position: relative;
+    }
+    div[data-testid="stChatInput"] form > div {
+        display: flex !important;
+        align-items: flex-end !important;
+        width: 100%;
+    }
+    div[data-testid="stChatInput"] [data-testid="stChatInputContainer"],
+    div[data-testid="stChatInput"] form > div > div {
+        display: flex !important;
+        align-items: flex-end !important;
     }
     div[data-testid="stChatInput"] textarea {
-        border-radius: 20px;
+        border-radius: 10px;
         border: 1px solid var(--clinic-border);
         background: var(--clinic-bg);
-        font-size: 1rem;
-        line-height: 1.4;
-        padding: 0.8rem 1rem;
-        min-height: 3.25rem;
+        font-size: var(--chat-input-font-size);
+        line-height: var(--chat-input-line-height);
+        padding: 0.8rem 0.7rem !important;
+        min-height: var(--chat-input-min-height);
+        max-height: var(--chat-input-max-height);
+        overflow-y: auto;
+        resize: none;
+        align-self: flex-end;
+        box-sizing: border-box;
+        width: calc(100% - 2.5rem) !important;
     }
     div[data-testid="stChatInput"] textarea:focus {
         border-color: var(--clinic-accent);
         box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+    }
+    div[data-testid="stChatInput"] button {
+        position: absolute !important;
+        right: 0.5rem;
+        bottom: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        flex-shrink: 0;
+        height: var(--chat-input-min-height);
+        width: var(--chat-input-min-height);
+        border-radius: 10px;
     }
 
     div[data-testid="stChatMessage"] {
