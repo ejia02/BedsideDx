@@ -30,11 +30,16 @@
    mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
    ```
 
-## 5. Create Vector Search Index
+## 5. Create Vector Search Indexes
 
 **IMPORTANT**: Vector search requires MongoDB Atlas (not self-hosted MongoDB)
 
-### Option A: Atlas UI
+You need to create **TWO** vector search indexes:
+
+### Index 1: Main Vector Search Index (vector_index_free)
+
+This index is used for searching by full text embedding (maneuvers, findings, etc.)
+
 1. Go to your cluster in Atlas
 2. Click on "Search" tab
 3. Click "Create Search Index"
@@ -47,37 +52,78 @@
     {
       "type": "vector",
       "path": "embedding",
-      "numDimensions": 1536,
+      "numDimensions": 384,
       "similarity": "cosine"
     },
     {
       "type": "filter",
-      "path": "ebm_box_label"
+      "path": "source.ebm_box_label"
     },
     {
       "type": "filter", 
-      "path": "chapter"
+      "path": "source.chapter"
     },
     {
       "type": "filter",
-      "path": "maneuver_base"
+      "path": "maneuver.name"
     }
   ]
 }
 ```
 
-6. Set index name to: `vector_index`
+6. Set index name to: `vector_index_free`
 7. Set database to: `bedside_dx`
-8. Set collection to: `exam_evidence`
+8. Set collection to: `mcgee_evidence`
 
-### Option B: Atlas CLI
-```bash
-atlas clusters search indexes create \
-  --clusterName <your-cluster-name> \
-  --file vector_index.json
+### Index 2: Disease Label Vector Search Index (ebm_label_vector_index)
+
+This index enables **disease-focused semantic search**. It allows queries like "DVT" to match "Deep Vein Thrombosis" through vector similarity on the disease/diagnosis labels.
+
+1. Click "Create Search Index" again
+2. Choose "JSON Editor"
+3. Use this index definition:
+
+```json
+{
+  "fields": [
+    {
+      "type": "vector",
+      "path": "ebm_box_label_embedding",
+      "numDimensions": 384,
+      "similarity": "cosine"
+    }
+  ]
+}
 ```
 
-Where `vector_index.json` contains the index definition above.
+4. Set index name to: `ebm_label_vector_index`
+5. Set database to: `bedside_dx`
+6. Set collection to: `mcgee_evidence`
+
+### Atlas CLI Option
+```bash
+# Create main vector index
+atlas clusters search indexes create \
+  --clusterName <your-cluster-name> \
+  --file vector_index_free.json
+
+# Create disease label vector index  
+atlas clusters search indexes create \
+  --clusterName <your-cluster-name> \
+  --file ebm_label_vector_index.json
+```
+
+### Migration for Existing Data
+
+If you have existing documents without the `ebm_box_label_embedding` field, run the migration script:
+
+```bash
+# Preview changes (dry run)
+python migrate_ebm_label_embeddings.py --dry-run
+
+# Apply changes
+python migrate_ebm_label_embeddings.py
+```
 
 ## 6. Environment Setup
 
@@ -99,9 +145,19 @@ python vector_store.py
 
 ### Vector Search Not Working
 - Ensure you're using MongoDB Atlas (not self-hosted)
-- Verify the vector search index is created and active
-- Check that the index name matches in your code (`vector_index`)
+- Verify BOTH vector search indexes are created and active:
+  - `vector_index_free` (for main embedding)
+  - `ebm_label_vector_index` (for disease label embedding)
+- Check that the index names match in your code
 - Ensure your cluster supports vector search (Atlas M10+ recommended for production)
+
+### Disease Search Not Finding Results
+- Verify `ebm_label_vector_index` exists in Atlas
+- Run the migration script to add `ebm_box_label_embedding` to existing documents:
+  ```bash
+  python migrate_ebm_label_embeddings.py
+  ```
+- Check documents have the `ebm_box_label_embedding` field
 
 ### Connection Issues
 - Check your IP is whitelisted in Network Access
@@ -109,14 +165,30 @@ python vector_store.py
 - Ensure connection string format is correct
 
 ### Embedding Issues
-- Verify OpenAI API key is valid and has credits
-- Check rate limits if getting errors
-- Ensure you're using the correct model name (`text-embedding-3-small`)
+- This project uses FREE local embeddings via SentenceTransformers (no API key needed!)
+- The model `all-MiniLM-L6-v2` generates 384-dimensional embeddings
+- Ensure sentence-transformers is installed: `pip install sentence-transformers`
 
 ## Performance Notes
 
 - Free tier (M0) has limitations on vector search performance
 - For production, consider M10+ clusters
 - Vector search index creation can take several minutes
-- Batch embedding generation to avoid rate limits
+- Embeddings are generated locally using SentenceTransformers (FREE!)
+
+## Vector Search Architecture
+
+The system uses two types of vector search:
+
+1. **Full-text Vector Search** (`embedding` field):
+   - Searches against the combined text of diagnosis + maneuver + LR values
+   - Used for general semantic search across all content
+
+2. **Disease-Focused Vector Search** (`ebm_box_label_embedding` field):
+   - Searches only against disease/diagnosis names
+   - Enables semantic matching of abbreviations and synonyms:
+     - "DVT" → "Deep Vein Thrombosis"
+     - "CHF" → "Heart Failure"
+     - "MI" → "Myocardial Infarction"
+   - Used when searching by differential diagnosis
 

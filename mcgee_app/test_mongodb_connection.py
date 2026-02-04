@@ -15,9 +15,10 @@ from config import MONGODB_URI, DATABASE_NAME, COLLECTION_NAME
 try:
     from pymongo import MongoClient
     from pymongo.errors import ConnectionFailure, OperationFailure
+    import certifi
     PYMONGO_AVAILABLE = True
 except ImportError:
-    print("❌ pymongo not installed. Install with: pip install pymongo")
+    print("❌ pymongo not installed. Install with: pip install pymongo certifi")
     sys.exit(1)
 
 def test_mongodb_connection():
@@ -33,7 +34,7 @@ def test_mongodb_connection():
     # Test 1: Connection
     print("1️⃣ Testing MongoDB connection...")
     try:
-        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000, tlsCAFile=certifi.where())
         # Force connection attempt
         client.admin.command('ping')
         print("   ✅ Connected successfully!")
@@ -41,9 +42,16 @@ def test_mongodb_connection():
         print(f"   ❌ Connection failed: {e}")
         print()
         print("💡 Troubleshooting:")
-        print("   • Ensure MongoDB is installed: brew install mongodb-community")
-        print("   • Start MongoDB: brew services start mongodb-community")
-        print("   • Check MongoDB status: brew services list | grep mongodb")
+        if "SSL" in str(e) or "TLS" in str(e) or "INTERNAL_ERROR" in str(e):
+            print("   🔐 SSL/TLS Error detected! Common causes:")
+            print("   • Your IP address is NOT whitelisted in MongoDB Atlas")
+            print("   • Go to: MongoDB Atlas → Network Access → Add IP Address")
+            print("   • Add your current IP or use 0.0.0.0/0 for development")
+            print("   • MongoDB Atlas cluster may be paused - check Atlas console")
+        else:
+            print("   • For local MongoDB: brew install mongodb-community")
+            print("   • Start MongoDB: brew services start mongodb-community")
+            print("   • Check MongoDB status: brew services list | grep mongodb")
         return False
     except Exception as e:
         print(f"   ❌ Unexpected error: {e}")

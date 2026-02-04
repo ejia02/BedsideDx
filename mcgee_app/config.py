@@ -58,7 +58,7 @@ TEMP_DIR = BASE_DIR / "mcgee_app" / "temp_images"
 
 # Read from environment or use defaults
 DATABASE_NAME = os.getenv("DATABASE_NAME", "bedside_dx")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "exam_evidence_free")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "mcgee_evidence")
 
 # Index configuration for efficient queries
 # Field names match the exam_evidence_free collection schema from excel_parser.py
@@ -88,18 +88,21 @@ IMAGE_FORMAT = "PNG"
 # =============================================================================
 
 # Model settings
-VISION_MODEL = "gpt-4o"  # For PDF image extraction
-REASONING_MODEL = "gpt-4o"  # For differential diagnosis and synthesis
+VISION_MODEL = "gpt-5.2"  # For PDF image extraction
+REASONING_MODEL = "gpt-5.2"  # For differential diagnosis and synthesis
+
+# Reasoning models (o1, o3, gpt-5+) don't support temperature parameter
+REASONING_MODEL_SUPPORTS_TEMPERATURE = not REASONING_MODEL.startswith(("o1", "o3", "gpt-5"))
 
 # Token limits
 MAX_TOKENS_EXTRACTION = 4096
 MAX_TOKENS_DIFFERENTIAL = 1024
-MAX_TOKENS_SYNTHESIS = 2048
+MAX_TOKENS_SYNTHESIS = 4096
 
 # Temperature settings (lower = more deterministic)
 TEMPERATURE_EXTRACTION = 0.1  # Very low for accurate data extraction
-TEMPERATURE_DIFFERENTIAL = 0.3  # Slightly higher for clinical reasoning
-TEMPERATURE_SYNTHESIS = 0.5  # Moderate for educational content
+TEMPERATURE_DIFFERENTIAL = 0.1  # Deterministic for consistent diagnoses
+TEMPERATURE_SYNTHESIS = 0.1  # Deterministic for consistent exam strategies
 
 # =============================================================================
 # RAG PIPELINE CONFIGURATION
@@ -107,11 +110,11 @@ TEMPERATURE_SYNTHESIS = 0.5  # Moderate for educational content
 
 # Number of differential diagnoses to generate
 MIN_DIFFERENTIAL_COUNT = 3
-MAX_DIFFERENTIAL_COUNT = 5
+MAX_DIFFERENTIAL_COUNT = 7
 
 # LR thresholds for categorizing maneuvers
-HIGH_YIELD_LR_POSITIVE_THRESHOLD = 5.0  # LR+ > 5.0 is high yield
-HIGH_YIELD_LR_NEGATIVE_THRESHOLD = 0.2  # LR- < 0.2 is high yield
+HIGH_YIELD_LR_POSITIVE_THRESHOLD = 10.0  # LR+ > 10 is high yield
+HIGH_YIELD_LR_NEGATIVE_THRESHOLD = 0.1  # LR- < 0.1 is high yield
 LOW_UTILITY_LR_LOWER = 0.5  # LR between 0.5 and 2.0 is low utility
 LOW_UTILITY_LR_UPPER = 2.0
 
@@ -119,7 +122,7 @@ LOW_UTILITY_LR_UPPER = 2.0
 # APPLICATION SETTINGS
 # =============================================================================
 
-APP_TITLE = "EBM Physical Exam Strategist (Educational Tool)"
+APP_TITLE = "AI-PEx"
 APP_VERSION = "1.0.0"
 
 # IRB Compliance warning message

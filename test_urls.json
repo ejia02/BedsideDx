@@ -1,0 +1,11 @@
+{
+  "comment": "Test configuration",
+  "pages": [
+    {
+      "title": "Hand Examination Test",
+      "url": "https://stanfordmedicine25.stanford.edu/the25/hand.html",
+      "category": "Test",
+      "enabled": true
+    }
+  ]
+}

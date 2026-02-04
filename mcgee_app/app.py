@@ -7,11 +7,11 @@ evidence-based physical examination strategies using Likelihood Ratio data.
 Run with: streamlit run mcgee_app/app.py
 """
 
+import time
 import streamlit as st
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
-import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Must be first Streamlit command
 st.set_page_config(
-    page_title="EBM Physical Exam Strategist",
+    page_title="AI-PEx",
     page_icon="🩺",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -52,56 +52,152 @@ except ImportError as e:
 def load_custom_css():
     st.markdown("""
     <style>
-    .main-header {
-        font-size: 2.2rem;
+    :root {
+        --clinic-blue: #1f3b5b;
+        --clinic-blue-strong: #16324f;
+        --clinic-gray: #475569;
+        --clinic-border: #e2e8f0;
+        --clinic-bg: #f8fafc;
+        --clinic-bg-alt: #f1f5f9;
+        --clinic-accent: #2563eb;
+        --clinic-positive: #1e7b57;
+        --clinic-negative: #b91c1c;
+        --sidebar-width: 0px;
+    }
+
+    body {
+        --sidebar-width: 0px;
+    }
+    body:has(section[data-testid="stSidebar"][aria-expanded="true"]) {
+        --sidebar-width: 21rem;
+    }
+    body:has(section[data-testid="stSidebar"][aria-expanded="false"]) {
+        --sidebar-width: 0px;
+    }
+
+    section.main > div {
+        padding-top: 3.25rem;
+    }
+    .block-container {
+        padding-top: 3.25rem;
+        padding-bottom: 6rem;
+        max-width: 1200px;
+    }
+
+    .app-header {
+        margin: 0 0 1rem 0;
+    }
+    .app-title {
+        font-size: 2.25rem;
         font-weight: 700;
-        color: #1E3A5F;
-        text-align: center;
-        margin-bottom: 0.25rem;
+        letter-spacing: -0.01em;
+        color: var(--clinic-blue);
+        margin: 0;
     }
-    .sub-header {
-        font-size: 1rem;
-        color: #666;
-        text-align: center;
-        margin-bottom: 1.5rem;
+    .app-subtitle {
+        font-size: 1.05rem;
+        color: var(--clinic-gray);
+        margin-top: 0.4rem;
+        max-width: 760px;
+        line-height: 1.5;
     }
-    .warning-box {
-        background-color: #FFF3CD;
-        border: 1px solid #FFECB5;
-        border-left: 4px solid #FFC107;
-        padding: 0.75rem;
-        border-radius: 4px;
-        margin-bottom: 1rem;
-        font-size: 0.9rem;
+
+    .disclaimer-card {
+        background: #ffffff;
+        border: 1px solid var(--clinic-border);
+        border-left: 4px solid var(--clinic-accent);
+        border-radius: 12px;
+        padding: 0.9rem 1.1rem;
+        margin: 0.75rem 0 1.25rem 0;
+        box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06);
+        max-width: 900px;
     }
-    .lr-high-positive {
-        color: #198754;
-        font-weight: 600;
-    }
-    .lr-high-negative {
-        color: #DC3545;
-        font-weight: 600;
-    }
-    .stButton > button {
-        width: 100%;
-        background-color: #1E3A5F;
-        color: white;
-        font-weight: 600;
-        padding: 0.6rem;
-        border-radius: 8px;
-    }
-    .stButton > button:hover {
-        background-color: #2C5282;
-    }
-    /* Style expanders for body system sections */
-    .streamlit-expanderHeader {
-        font-size: 1.05rem !important;
-        font-weight: 600 !important;
-        color: #1E3A5F !important;
-    }
-    /* Compact text area */
-    .stTextArea textarea {
+    .disclaimer-card p {
+        margin: 0 0 0.6rem 0;
+        color: #0f172a;
         font-size: 0.95rem;
+        line-height: 1.5;
+    }
+    .disclaimer-card p:last-child {
+        margin-bottom: 0;
+    }
+    .disclaimer-card strong {
+        color: var(--clinic-blue-strong);
+    }
+
+    .banner {
+        background: var(--clinic-bg);
+        border: 1px solid var(--clinic-border);
+        border-left: 4px solid var(--clinic-accent);
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+        color: #0f172a;
+        font-size: 0.9rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .chat-empty-state {
+        color: var(--clinic-gray);
+        font-size: 0.95rem;
+        padding: 0.5rem 0 1rem 0;
+    }
+
+    div[data-testid="stChatInput"] {
+        position: fixed;
+        bottom: 0;
+        left: var(--sidebar-width, 0px);
+        right: 0;
+        width: calc(100% - var(--sidebar-width, 0px));
+        background: #ffffff;
+        border-top: 1px solid var(--clinic-border);
+        padding: 0.75rem 1.25rem 1rem;
+        z-index: 100;
+        transition: left 0.2s ease, width 0.2s ease;
+    }
+    div[data-testid="stChatInput"] > div {
+        max-width: 1200px;
+        width: 100%;
+        margin: 0 auto;
+    }
+    div[data-testid="stChatInput"] textarea {
+        border-radius: 20px;
+        border: 1px solid var(--clinic-border);
+        background: var(--clinic-bg);
+        font-size: 1rem;
+        line-height: 1.4;
+        padding: 0.8rem 1rem;
+        min-height: 3.25rem;
+    }
+    div[data-testid="stChatInput"] textarea:focus {
+        border-color: var(--clinic-accent);
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+    }
+
+    div[data-testid="stChatMessage"] {
+        padding: 0.35rem 0;
+    }
+    div[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] p {
+        margin-bottom: 0.35rem;
+    }
+
+    .streamlit-expanderHeader {
+        font-size: 1rem !important;
+        font-weight: 600 !important;
+        color: var(--clinic-blue-strong) !important;
+    }
+    div[data-testid="stExpander"] > details {
+        border: 1px solid var(--clinic-border);
+        border-radius: 10px;
+        background: #ffffff;
+    }
+    div[data-testid="stExpander"] > details > summary {
+        padding: 0.5rem 0.7rem;
+        background: var(--clinic-bg);
+        border-radius: 10px;
+    }
+
+    hr {
+        margin: 1rem 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -109,38 +205,62 @@ def load_custom_css():
 
 def display_header():
     """Display the application header."""
-    st.markdown(f'<h1 class="main-header">🩺 {APP_TITLE}</h1>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="sub-header">Evidence-Based Physical Examination Learning Tool</p>',
+        f"""
+        <div class="app-header">
+            <div class="app-title">{APP_TITLE}</div>
+            <div class="app-subtitle">Evidence-Based Physical Exam Strategist</div>
+        </div>
+        """,
         unsafe_allow_html=True
     )
 
 
+def format_disclaimer_html(disclaimer_text: str) -> str:
+    """Convert the disclaimer markdown into HTML for structured styling."""
+    def bold_to_html(text: str) -> str:
+        parts = text.split("**")
+        for index in range(1, len(parts), 2):
+            parts[index] = f"<strong>{parts[index]}</strong>"
+        return "".join(parts)
+
+    paragraphs = [
+        paragraph.strip()
+        for paragraph in disclaimer_text.strip().split("\n\n")
+        if paragraph.strip()
+    ]
+    html_paragraphs = "".join(
+        f"<p>{bold_to_html(paragraph)}</p>" for paragraph in paragraphs
+    )
+    return f'<div class="disclaimer-card">{html_paragraphs}</div>'
+
+
 def display_irb_warning():
     """Display the IRB compliance warning."""
-    st.warning(IRB_WARNING)
+    disclaimer_html = format_disclaimer_html(IRB_WARNING)
+    st.markdown(disclaimer_html, unsafe_allow_html=True)
 
 
 def display_config_status():
     """Display configuration validation status in sidebar."""
     with st.sidebar:
-        st.markdown("### ⚙️ System Status")
+        st.markdown("### System Status")
         
         validation = validate_config()
         
         if validation['valid']:
-            st.success("✅ Configuration valid")
+            st.success("Configuration valid")
         else:
-            st.error("❌ Configuration issues")
+            st.error("Configuration issues")
             for error in validation['errors']:
                 st.error(f"• {error}")
         
         for warning in validation.get('warnings', []):
-            st.warning(f"⚠️ {warning}")
+            st.warning(warning)
         
         # Check MongoDB connection
         st.markdown("---")
-        st.markdown("### 📊 Database Status")
+        st.markdown("### Database Status")
         
         if PYMONGO_AVAILABLE:
             try:
@@ -148,11 +268,11 @@ def display_config_status():
                 if client.connect():
                     diseases = client.get_all_diseases()
                     record_count = client.collection.count_documents({})
-                    st.success(f"✅ MongoDB connected")
-                    st.info(f"📋 {len(diseases)} diseases, {record_count} total records")
+                    st.success("MongoDB connected")
+                    st.info(f"{len(diseases)} diseases, {record_count} total records")
                     client.close()
                 else:
-                    st.error("❌ MongoDB not connected")
+                    st.error("MongoDB not connected")
                     st.error("""
                     **Required:** MongoDB must be running and accessible.
                     
@@ -162,31 +282,31 @@ def display_config_status():
                     3. Load data: `python mcgee_app/load_sample.py`
                     """)
             except Exception as e:
-                st.error(f"❌ MongoDB Error: {str(e)[:100]}")
+                st.error(f"MongoDB error: {str(e)[:100]}")
                 st.error("Please ensure MongoDB is installed and running.")
         else:
-            st.error("❌ pymongo not installed")
+            st.error("pymongo not installed")
             st.error("Install with: `pip install pymongo`")
         
         # OpenAI status
         st.markdown("---")
-        st.markdown("### 🤖 AI Status")
+        st.markdown("### AI Status")
         
         if OPENAI_AVAILABLE:
             from config import OPENAI_API_KEY
             if OPENAI_API_KEY:
-                st.success("✅ OpenAI configured")
+                st.success("OpenAI configured")
             else:
-                st.error("❌ OPENAI_API_KEY not set")
+                st.error("OPENAI_API_KEY not set")
         else:
-            st.error("❌ openai library not installed")
+            st.error("openai library not installed")
 
 
 def display_sidebar_info():
     """Display educational information in sidebar."""
     with st.sidebar:
         st.markdown("---")
-        st.markdown("### 📚 Understanding LRs")
+        st.markdown("### Understanding LRs")
         
         st.markdown("""
         **Likelihood Ratios (LRs)** help quantify how a test result changes 
@@ -206,7 +326,7 @@ def display_sidebar_info():
         """)
         
         st.markdown("---")
-        st.markdown("### 🔬 High-Yield Criteria")
+        st.markdown("### High-Yield Criteria")
         st.markdown(f"""
         This tool highlights maneuvers meeting:
         - **LR+ ≥ {HIGH_YIELD_LR_POSITIVE_THRESHOLD}** (strong positive predictor)
@@ -216,75 +336,159 @@ def display_sidebar_info():
 
 def display_example_cases():
     """Display example cases for users to try."""
-    with st.expander("📋 Example Cases to Try", expanded=False):
-        st.markdown("""
-        **Case 1: Possible DVT**
-        ```
-        45-year-old woman with left leg swelling and pain for 3 days. 
-        Redness and warmth in calf. Recent 12-hour flight one week ago. 
-        No fever. On oral contraceptives.
-        ```
-        
-        **Case 2: Suspected Pneumonia**
-        ```
-        68-year-old man with productive cough for 5 days, fever to 101°F,
-        shortness of breath with exertion. History of COPD. 
-        Increased sputum production, now greenish.
-        ```
-        
-        **Case 3: Heart Failure Evaluation**
-        ```
-        72-year-old woman with progressive dyspnea over 2 weeks. 
-        Orthopnea (uses 3 pillows). Bilateral ankle swelling. 
-        History of hypertension and diabetes.
-        ```
-        
-        **Case 4: Acute Abdomen**
-        ```
-        23-year-old male with right lower quadrant pain for 18 hours.
-        Pain started around umbilicus, now localized to RLQ.
-        Low-grade fever, nausea, loss of appetite.
-        ```
-        """)
+    with st.sidebar:
+        with st.expander("Example Cases", expanded=False):
+            st.markdown("""
+            **Case 1: Possible DVT**
+            ```
+            45-year-old woman with left leg swelling and pain for 3 days. 
+            Redness and warmth in calf. Recent 12-hour flight one week ago. 
+            No fever. On oral contraceptives.
+            ```
+            
+            **Case 2: Suspected Pneumonia**
+            ```
+            68-year-old man with productive cough for 5 days, fever to 101°F,
+            shortness of breath with exertion. History of COPD. 
+            Increased sputum production, now greenish.
+            ```
+            
+            **Case 3: Heart Failure Evaluation**
+            ```
+            72-year-old woman with progressive dyspnea over 2 weeks. 
+            Orthopnea (uses 3 pillows). Bilateral ankle swelling. 
+            History of hypertension and diabetes.
+            ```
+            
+            **Case 4: Acute Abdomen**
+            ```
+            23-year-old male with right lower quadrant pain for 18 hours.
+            Pain started around umbilicus, now localized to RLQ.
+            Low-grade fever, nausea, loss of appetite.
+            ```
+            """)
 
 
 def create_evidence_dataframe(evidence: List[Dict[str, Any]]) -> pd.DataFrame:
-    """Create a formatted DataFrame from evidence data."""
+    """Create a formatted DataFrame from evidence data.
+    
+    Handles nested schema from MongoDB where:
+    - source.ebm_box_label contains the diagnosis
+    - result_buckets[0].lr_positive/lr_negative contain LR values
+    - original_finding contains the physical finding
+    """
     if not evidence:
         return pd.DataFrame()
     
-    df = pd.DataFrame(evidence)
+    # Flatten nested schema for display
+    flattened_data = []
+    for item in evidence:
+        # Extract from nested schema
+        source = item.get('source', {})
+        result_buckets = item.get('result_buckets', [{}])
+        bucket = result_buckets[0] if result_buckets else {}
+        maneuver = item.get('maneuver', {})
+        
+        flattened_data.append({
+            'Diagnosis': source.get('ebm_box_label') or item.get('ebm_box_label', '-'),
+            'Physical Finding': item.get('original_finding', '-'),
+            'Maneuver': maneuver.get('name') or item.get('maneuver_base', '-'),
+            'LR+': bucket.get('lr_positive') or item.get('pos_lr_numeric'),
+            'LR-': bucket.get('lr_negative') or item.get('neg_lr_numeric'),
+            'Pretest %': bucket.get('pretest_prob') or item.get('pretest_prob_numeric'),
+        })
     
-    # Select and rename columns - using exam_evidence_free schema field names
-    column_map = {
-        'ebm_box_label': 'Diagnosis',
-        'original_finding': 'Physical Finding',
-        'maneuver_base': 'Maneuver',
-        'result_modifier': 'Result',
-        'pretest_prob_numeric': 'Pretest %',
-        'pos_lr_numeric': 'LR+',
-        'neg_lr_numeric': 'LR-',
-    }
-    
-    # Filter to existing columns
-    cols_to_use = [c for c in column_map.keys() if c in df.columns]
-    df = df[cols_to_use].rename(columns=column_map)
+    df = pd.DataFrame(flattened_data)
     
     # Format numeric columns
     if 'Pretest %' in df.columns:
         df['Pretest %'] = df['Pretest %'].apply(
-            lambda x: f"{x:.0f}%" if pd.notna(x) else "-"
+            lambda x: f"{x:.0f}%" if pd.notna(x) and x is not None else "-"
         )
     if 'LR+' in df.columns:
         df['LR+'] = df['LR+'].apply(
-            lambda x: f"{x:.1f}" if pd.notna(x) else "-"
+            lambda x: f"{x:.1f}" if pd.notna(x) and x is not None else "-"
         )
     if 'LR-' in df.columns:
         df['LR-'] = df['LR-'].apply(
-            lambda x: f"{x:.2f}" if pd.notna(x) else "-"
+            lambda x: f"{x:.2f}" if pd.notna(x) and x is not None else "-"
         )
     
     return df
+
+
+def parse_lr_value(lr_string: str) -> Optional[float]:
+    """
+    Parse a likelihood ratio string value to a float.
+    
+    Handles various formats like "15.0", "0.05", "2.5", etc.
+    Returns None if parsing fails.
+    """
+    if not lr_string:
+        return None
+    try:
+        # Handle string representations
+        lr_str = str(lr_string).strip()
+        return float(lr_str)
+    except (ValueError, TypeError):
+        return None
+
+
+def init_session_state():
+    """Initialize chat session state."""
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+
+def format_differential_markdown(differential_items: List[Dict[str, str]]) -> str:
+    """Format differential diagnosis items as chat-friendly markdown."""
+    if not differential_items:
+        return "**Differential diagnosis**\n\nNo differential diagnoses were generated."
+
+    lines = ["**Differential diagnosis**"]
+    for item in differential_items:
+        name = (item.get("name") or "").strip()
+        rationale = (item.get("rationale") or "").strip()
+        if not rationale:
+            rationale = "Considered given the presenting symptoms and common etiologies."
+        lines.append(f"- **{name}** — {rationale}")
+    return "\n".join(lines)
+
+
+def stream_markdown(text: str, delay: float = 0.012):
+    """Stream markdown text progressively for a chat-like effect."""
+    placeholder = st.empty()
+    if not text:
+        return
+    words = text.split(" ")
+    buffer = ""
+    for word in words:
+        buffer = f"{buffer} {word}".strip()
+        placeholder.markdown(buffer)
+        time.sleep(delay)
+    placeholder.markdown(buffer)
+
+
+def render_strategy_message(result: Dict[str, Any]):
+    """Render the structured strategy and evidence in a chat message."""
+    st.markdown("**Physical exam strategy**")
+    display_compact_summary(result)
+
+    strategy_structured = result.get("strategy_structured", {})
+    parse_error = strategy_structured.get("parse_error")
+    if parse_error:
+        st.warning(
+            "The structured response could not be parsed reliably. "
+            "Showing the fallback strategy below."
+        )
+
+    if strategy_structured.get("sections"):
+        display_structured_strategy(strategy_structured)
+    else:
+        strategy = result.get("strategy", "No strategy generated")
+        st.markdown(strategy)
+
+    display_raw_evidence(result)
 
 
 def display_compact_summary(result: Dict[str, Any]):
@@ -298,132 +502,23 @@ def display_compact_summary(result: Dict[str, Any]):
     processing_time = result.get('processing_time', 0)
     
     st.markdown(
-        f'<p style="color: #666; font-size: 0.95rem; margin-bottom: 1.5rem;">'
+        f'<div style="color: var(--clinic-gray); font-size: 0.9rem; margin: 0.25rem 0 0.75rem 0;">'
         f'Analyzed <strong>{evidence_count}</strong> evidence records · '
-        f'<span style="color: #198754; font-weight: 600;">{high_yield_count} high-yield maneuvers</span> · '
-        f'{processing_time:.1f}s</p>',
+        f'<span style="color: var(--clinic-positive); font-weight: 600;">{high_yield_count} high-yield maneuvers</span> · '
+        f'{processing_time:.1f}s</div>',
         unsafe_allow_html=True
     )
 
 
-def display_top_picks(strategy_structured: Dict[str, Any]):
-    """
-    Display the top 2-3 highest-yield maneuvers as a quick reference.
-    
-    Args:
-        strategy_structured: Dictionary with 'sections' list from GPT
-    """
-    sections = strategy_structured.get('sections', [])
-    
-    if not sections:
-        return
-    
-    # Collect all high-yield maneuvers across all sections
-    all_high_yield = []
-    for section in sections:
-        for maneuver in section.get('maneuvers', []):
-            if maneuver.get('high_yield', False):
-                all_high_yield.append({
-                    **maneuver,
-                    'system': section.get('system', 'General')
-                })
-    
-    if not all_high_yield:
-        return
-    
-    # Sort by LR value and take top 3
-    def extract_lr_for_sort(m: Dict[str, Any]) -> float:
-        lr_info = m.get('lr_info', '')
-        match = re.search(r'[\d.]+', lr_info)
-        if match:
-            val = float(match.group())
-            if 'LR-' in lr_info:
-                return 1 / val if val > 0 else 0
-            return val
-        return 0
-    
-    top_picks = sorted(all_high_yield, key=extract_lr_for_sort, reverse=True)[:3]
-    
-    if not top_picks:
-        return
-    
-    # Display top picks section
-    st.markdown("""
-    <style>
-    .top-picks-container {
-        background: linear-gradient(135deg, #1E3A5F 0%, #2C5282 100%);
-        border-radius: 10px;
-        padding: 16px 20px;
-        margin-bottom: 20px;
-    }
-    .top-picks-header {
-        color: white;
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin-bottom: 12px;
-    }
-    .top-pick-item {
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 6px;
-        padding: 10px 14px;
-        margin-bottom: 8px;
-    }
-    .top-pick-item:last-child {
-        margin-bottom: 0;
-    }
-    .top-pick-name {
-        font-weight: 600;
-        color: #1E3A5F;
-        font-size: 0.95rem;
-    }
-    .top-pick-purpose {
-        color: #495057;
-        font-size: 0.85rem;
-        margin-top: 2px;
-    }
-    .top-pick-lr {
-        color: #198754;
-        font-weight: 600;
-        font-size: 0.8rem;
-        margin-top: 4px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    picks_html = '<div class="top-picks-container">'
-    picks_html += '<div class="top-picks-header">🎯 Quick Reference - Top High-Yield Maneuvers</div>'
-    
-    for i, pick in enumerate(top_picks, 1):
-        name = pick.get('name', 'Unknown')
-        purpose = pick.get('purpose', '')
-        lr_info = pick.get('lr_info', '')
-        
-        # Use suggestive language
-        if purpose:
-            # Make the purpose more suggestive if it contains absolute language
-            purpose = purpose.replace('diagnoses', 'may suggest')
-            purpose = purpose.replace('confirms', 'may indicate')
-            purpose = purpose.replace('rules out', 'may help rule out')
-            purpose = purpose.replace('rules in', 'may support')
-        
-        picks_html += f'''
-        <div class="top-pick-item">
-            <div class="top-pick-name">{i}. {name}</div>
-            <div class="top-pick-purpose">{purpose}</div>
-            <div class="top-pick-lr">{lr_info}</div>
-        </div>
-        '''
-    
-    picks_html += '</div>'
-    st.markdown(picks_html, unsafe_allow_html=True)
-
-
 def display_structured_strategy(strategy_structured: Dict[str, Any]):
     """
-    Display the physical exam strategy as collapsible body system sections.
+    Display the physical exam strategy as collapsible body system sections,
+    with diseases grouped underneath and maneuvers categorized as Rule In or Rule Out.
+    
+    Hierarchy: Body System -> Disease -> Rule In/Rule Out -> Maneuvers
     
     Args:
-        strategy_structured: Dictionary with 'sections' list from GPT
+        strategy_structured: Dictionary with 'sections' list containing disease groupings
     """
     sections = strategy_structured.get('sections', [])
     
@@ -431,104 +526,237 @@ def display_structured_strategy(strategy_structured: Dict[str, Any]):
         st.info("No exam recommendations generated. Try providing more specific symptoms.")
         return
     
-    # Custom CSS for maneuver cards
+    # Custom CSS for the hierarchical display
     st.markdown("""
     <style>
-    .maneuver-card {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin-bottom: 10px;
-        border-left: 4px solid #6c757d;
+    /* Body system container */
+    .system-block {
+        background: transparent;
+        border-radius: 12px;
+        padding: 4px 2px 12px 2px;
+        margin: 0;
+        width: 100%;
+        box-sizing: border-box;
+        
     }
-    .maneuver-card.high-yield {
-        border-left-color: #198754;
-        background: linear-gradient(135deg, #d1e7dd 0%, #c3e6cb 100%);
+    .streamlit-expanderHeader {
+        font-size: 1.2rem !important;
+    }
+
+    /* Disease block styling */
+    .disease-block {
+        background: transparent;
+        border: none;
+        padding: 0;
+        margin: 16px 0;
+    }
+    .disease-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 0;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: none;
+        background: #e2e8f0;
+    }
+    .disease-name {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--clinic-blue-strong);
+    }
+    .disease-meta {
+        font-size: 0.8rem;
+        color: var(--clinic-gray);
+        white-space: nowrap;
+    }
+    .disease-body {
+        padding-left: 2px;
+    }
+    
+    /* Rule category headers - neutral styling */
+    .rule-category {
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin: 0 0 6px 0;
+        padding: 4px 8px;
+        border-radius: 6px;
+        color: var(--clinic-gray);
+        background-color: #eef2f7;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        border: none;
+    }
+    
+    
+    /* Maneuver card styling - neutral by default */
+    .maneuver-card {
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        margin-left: 4px;
+        border: none;
+        box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06);
+    }
+    /* High-yield positive: LR+ > 10 only */
+    .maneuver-card.high-yield-positive {
+        background: #eef7f1;
+    }
+    /* High-yield negative: LR- < 0.1 only */
+    .maneuver-card.high-yield-negative {
+        background: #fef2f2;
     }
     .maneuver-name {
         font-weight: 600;
-        font-size: 1rem;
-        color: #1E3A5F;
-        margin-bottom: 4px;
-    }
-    .maneuver-purpose {
-        font-size: 0.9rem;
-        color: #495057;
-        margin-bottom: 4px;
+        font-size: 0.95rem;
+        color: var(--clinic-blue-strong);
+        margin-bottom: 2px;
     }
     .maneuver-lr {
         font-size: 0.85rem;
-        color: #198754;
         font-weight: 600;
+    }
+    .maneuver-lr.positive {
+        color: var(--clinic-positive);
+    }
+    .maneuver-lr.negative {
+        color: var(--clinic-negative);
     }
     .maneuver-technique {
         font-size: 0.85rem;
-        color: #6c757d;
+        color: var(--clinic-gray);
         font-style: italic;
+        margin-top: 4px;
     }
-    .high-yield-badge {
-        display: inline-block;
-        background-color: #198754;
-        color: white;
-        font-size: 0.7rem;
-        padding: 2px 8px;
-        border-radius: 10px;
-        margin-left: 8px;
-        vertical-align: middle;
+    
+    /* Empty state */
+    .no-maneuvers {
+        font-size: 0.85rem;
+        color: var(--clinic-gray);
+        font-style: italic;
+        margin-left: 4px;
+        padding: 8px;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    def extract_lr_value(maneuver: Dict[str, Any]) -> float:
-        """Extract numeric LR value for sorting (higher is better)."""
-        lr_info = maneuver.get('lr_info', '')
-        match = re.search(r'[\d.]+', lr_info)
-        if match:
-            val = float(match.group())
-            # For LR-, lower values are more useful, so invert for sorting
-            if 'LR-' in lr_info:
-                return 1 / val if val > 0 else 0
-            return val
-        return 0
-    
     for section in sections:
         system_name = section.get('system', 'General Exam')
-        maneuvers = section.get('maneuvers', [])
+        diseases = section.get('diseases', [])
         
-        # Sort maneuvers by LR value (highest first)
-        maneuvers = sorted(maneuvers, key=extract_lr_value, reverse=True)
+        # Count total maneuvers across all diseases
+        total_rule_in = sum(len(d.get('rule_in', [])) for d in diseases)
+        total_rule_out = sum(len(d.get('rule_out', [])) for d in diseases)
+        total_maneuvers = total_rule_in + total_rule_out
         
-        # Count high-yield maneuvers for this section
-        high_yield_in_section = sum(1 for m in maneuvers if m.get('high_yield', False))
-        
-        # Create section header with maneuver count
-        section_label = f"{system_name} ({len(maneuvers)} maneuvers"
-        if high_yield_in_section > 0:
-            section_label += f", {high_yield_in_section} high-yield"
-        section_label += ")"
+        # Create section header with counts
+        section_label = f"{system_name} ({len(diseases)} diseases, {total_maneuvers} maneuvers)"
         
         with st.expander(section_label, expanded=True):
-            for maneuver in maneuvers:
-                is_high_yield = maneuver.get('high_yield', False)
-                card_class = "maneuver-card high-yield" if is_high_yield else "maneuver-card"
+            if not diseases:
+                st.markdown(
+                    '<div class="system-block">'
+                    '<p class="no-maneuvers">No specific diseases identified for this system.</p>'
+                    '</div>',
+                    unsafe_allow_html=True
+                )
+                continue
+
+            system_html = ['<div class="system-block">']
+
+            for disease in diseases:
+                disease_name = disease.get('name', 'Unknown Disease')
+                rule_in_maneuvers = disease.get('rule_in', [])
+                rule_out_maneuvers = disease.get('rule_out', [])
                 
-                name = maneuver.get('name', 'Unknown')
-                purpose = maneuver.get('purpose', '')
-                lr_info = maneuver.get('lr_info', '')
-                technique = maneuver.get('technique', '')
+                # Sort Rule In maneuvers by LR+ descending (highest first = most significant)
+                rule_in_maneuvers = sorted(
+                    rule_in_maneuvers,
+                    key=lambda m: parse_lr_value(m.get('lr_positive', '')) or 0,
+                    reverse=True
+                )
                 
-                badge_html = '<span class="high-yield-badge">HIGH YIELD</span>' if is_high_yield else ''
-                lr_html = f'<div class="maneuver-lr">{lr_info}</div>' if lr_info else ''
-                technique_html = f'<div class="maneuver-technique">{technique}</div>' if technique else ''
+                # Sort Rule Out maneuvers by LR- ascending (lowest first = most significant)
+                rule_out_maneuvers = sorted(
+                    rule_out_maneuvers,
+                    key=lambda m: parse_lr_value(m.get('lr_negative', '')) or float('inf'),
+                    reverse=False
+                )
                 
-                st.markdown(f"""
-                <div class="{card_class}">
-                    <div class="maneuver-name">{name}{badge_html}</div>
-                    <div class="maneuver-purpose">{purpose}</div>
-                    {lr_html}
-                    {technique_html}
-                </div>
-                """, unsafe_allow_html=True)
+                disease_meta = f"{len(rule_in_maneuvers)} rule-in · {len(rule_out_maneuvers)} rule-out"
+                system_html.append(
+                    f'<div class="disease-block">'
+                    f'<div class="disease-header">'
+                    f'<div class="disease-name">{disease_name}</div>'
+                    f'<div class="disease-meta">{disease_meta}</div>'
+                    f'</div>'
+                    f'<div class="disease-body">'
+                )
+                
+                # Rule In section
+                if rule_in_maneuvers:
+                    system_html.append(
+                        f'<div class="rule-category rule-in">Rule In - {len(rule_in_maneuvers)} maneuvers</div>'
+                    )
+                    for maneuver in rule_in_maneuvers:
+                        name = maneuver.get('name', 'Unknown')
+                        lr_positive = maneuver.get('lr_positive', '')
+                        technique = maneuver.get('technique', '')
+                        
+                        # Parse LR+ and determine if high-yield (LR+ > 10)
+                        lr_value = parse_lr_value(lr_positive)
+                        is_high_yield = lr_value is not None and lr_value > HIGH_YIELD_LR_POSITIVE_THRESHOLD
+                        card_class = "maneuver-card high-yield-positive" if is_high_yield else "maneuver-card"
+                        
+                        lr_html = f'<div class="maneuver-lr positive">LR+ {lr_positive}</div>' if lr_positive else ''
+                        technique_html = f'<div class="maneuver-technique">{technique}</div>' if technique else ''
+                        
+                        system_html.append(
+                            f'<div class="{card_class}">'
+                            f'<div class="maneuver-name">{name}</div>'
+                            f'{lr_html}'
+                            f'{technique_html}'
+                            f'</div>'
+                        )
+                
+                # Rule Out section
+                if rule_out_maneuvers:
+                    system_html.append(
+                        f'<div class="rule-category rule-out">Rule Out - {len(rule_out_maneuvers)} maneuvers</div>'
+                    )
+                    for maneuver in rule_out_maneuvers:
+                        name = maneuver.get('name', 'Unknown')
+                        lr_negative = maneuver.get('lr_negative', '')
+                        technique = maneuver.get('technique', '')
+                        
+                        # Parse LR- and determine if high-yield (LR- < 0.1)
+                        lr_value = parse_lr_value(lr_negative)
+                        is_high_yield = lr_value is not None and lr_value < HIGH_YIELD_LR_NEGATIVE_THRESHOLD
+                        card_class = "maneuver-card high-yield-negative" if is_high_yield else "maneuver-card"
+                        
+                        lr_html = f'<div class="maneuver-lr negative">LR- {lr_negative}</div>' if lr_negative else ''
+                        technique_html = f'<div class="maneuver-technique">{technique}</div>' if technique else ''
+                        
+                        system_html.append(
+                            f'<div class="{card_class}">'
+                            f'<div class="maneuver-name">{name}</div>'
+                            f'{lr_html}'
+                            f'{technique_html}'
+                            f'</div>'
+                        )
+                
+                # If disease has no maneuvers in either category
+                if not rule_in_maneuvers and not rule_out_maneuvers:
+                    system_html.append(
+                        '<p class="no-maneuvers">No high-yield maneuvers available for this disease.</p>'
+                    )
+                
+                system_html.append("</div></div>")
+
+            system_html.append("</div>")
+            st.markdown("".join(system_html), unsafe_allow_html=True)
 
 
 def display_raw_evidence(result: Dict[str, Any]):
@@ -538,7 +766,7 @@ def display_raw_evidence(result: Dict[str, Any]):
     if not all_evidence:
         return
     
-    with st.expander(f"📊 View Raw Evidence Data ({len(all_evidence)} records)", expanded=False):
+    with st.expander(f"View Evidence Data ({len(all_evidence)} records)", expanded=False):
         df = create_evidence_dataframe(all_evidence)
         if not df.empty:
             st.dataframe(df, use_container_width=True, hide_index=True)
@@ -552,7 +780,7 @@ def display_raw_evidence(result: Dict[str, Any]):
 def display_results(result: Dict[str, Any]):
     """Display the pipeline results with collapsible body system sections."""
     if not result.get('success'):
-        st.error(f"❌ Error: {result.get('error', 'Unknown error occurred')}")
+        st.error(f"Error: {result.get('error', 'Unknown error occurred')}")
         return
     
     # Compact summary line
@@ -560,16 +788,18 @@ def display_results(result: Dict[str, Any]):
     
     # Display structured strategy (collapsible body system sections)
     strategy_structured = result.get('strategy_structured', {})
+    parse_error = strategy_structured.get('parse_error')
+    if parse_error:
+        st.warning(
+            "The structured response could not be parsed reliably. "
+            "Showing the fallback strategy below."
+        )
     
     if strategy_structured.get('sections'):
-        # Show top picks first for quick reference
-        display_top_picks(strategy_structured)
-        
-        # Then show all body system sections
         display_structured_strategy(strategy_structured)
     else:
         # Fallback to legacy markdown display if structured not available
-        st.markdown("### 📋 Physical Exam Strategy")
+        st.markdown("### Physical Exam Strategy")
         strategy = result.get('strategy', 'No strategy generated')
         st.markdown(strategy)
     
@@ -590,104 +820,148 @@ def main():
         st.info("Please ensure all dependencies are installed: pip install -r requirements.txt")
         return
     
-    # Display header
+    # Initialize session state for chat history
+    init_session_state()
+
+    prompt = st.chat_input("Describe the patient's presenting symptoms and context...")
+    if prompt and not prompt.strip():
+        prompt = None
+
+    if prompt:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # Display header and disclaimers
     display_header()
-    
-    # Display IRB warning
-    display_irb_warning()
-    
-    # Display sidebar
+    if not st.session_state.messages:
+        display_irb_warning()
+
+    # Sidebar content
     display_config_status()
     display_sidebar_info()
-    
-    # Main content area
-    st.markdown("### 🩺 Enter Patient Symptoms")
-    
-    # Display example cases
     display_example_cases()
-    
-    # Symptom input
-    symptoms = st.text_area(
-        "Describe the patient's presenting symptoms:",
-        height=150,
-        placeholder="Enter patient symptoms, history, and relevant clinical context...\n\n"
-                    "Example: 45-year-old woman with left leg swelling and pain for 3 days. "
-                    "Redness and warmth in calf. Recent 12-hour flight one week ago.",
-        help="Provide relevant clinical details including onset, duration, "
-             "associated symptoms, and pertinent history."
-    )
-    
-    # Generate button
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        generate_clicked = st.button(
-            "🔬 Generate Physical Exam Strategy",
-            type="primary",
-            use_container_width=True
+
+    # Render chat history
+    if not st.session_state.messages:
+        st.markdown(
+            '<div class="chat-empty-state">Enter a patient presentation to start.</div>',
+            unsafe_allow_html=True
         )
-    
-    # Process request
-    if generate_clicked:
-        if not symptoms.strip():
-            st.warning("⚠️ Please enter patient symptoms before generating a strategy.")
-            return
-        
-        # Validate configuration
-        validation = validate_config()
-        if not validation['valid']:
-            for error in validation['errors']:
-                st.error(f"Configuration error: {error}")
-            return
-        
-        # Run the pipeline
-        with st.spinner("🔄 Analyzing symptoms and generating strategy..."):
-            try:
-                # Require MongoDB - no fallback to sample data
-                client = MongoDBClient()
-                if not client.connect():
-                    st.error("❌ **MongoDB Connection Failed**")
-                    st.error("""
-                    **Cannot connect to MongoDB database.**
-                    
-                    Please ensure:
-                    1. MongoDB is installed and running
-                    2. MongoDB is accessible at: `{}`
-                    3. The database has been initialized with data
-                    
-                    **To set up MongoDB:**
-                    ```bash
-                    # Install MongoDB (macOS)
-                    brew tap mongodb/brew
-                    brew install mongodb-community
-                    brew services start mongodb-community
-                    
-                    # Load data
-                    python mcgee_app/load_sample.py
-                    ```
-                    
-                    See `mcgee_app/MONGODB_EXPLANATION.md` for detailed setup instructions.
-                    """.format(MONGODB_URI))
-                    return
-                
-                # Run pipeline with MongoDB
-                result = run_rag_pipeline(symptoms)
-                
-                # Display results
-                display_results(result)
-                
-            except Exception as e:
-                logger.exception("Application error")
-                st.error(f"❌ An error occurred: {str(e)}")
-                st.info("Please check your configuration and try again.")
-    
+    else:
+        for message in st.session_state.messages:
+            with st.chat_message(message.get("role", "assistant")):
+                message_type = message.get("type")
+                if message.get("role") == "user":
+                    st.markdown(message.get("content", ""))
+                elif message_type == "differential":
+                    st.markdown(message.get("content", ""))
+                elif message_type == "strategy":
+                    result = message.get("result", {})
+                    render_strategy_message(result)
+                elif message_type == "error":
+                    st.error(message.get("content", "An error occurred."))
+                else:
+                    st.markdown(message.get("content", ""))
+
+    # Process new request
+    if prompt:
+        with st.chat_message("assistant"):
+            status_box = st.status("Preparing response...", expanded=False)
+            
+            # Placeholder for differential - will be populated by callback
+            diff_placeholder = st.empty()
+            # Store rendered markdown for session state
+            rendered_differential = {"markdown": "", "items": []}
+
+            def status_cb(message: str):
+                status_box.update(label=message, state="running")
+
+            def on_differential_ready(diagnoses, details):
+                """Callback to display differential immediately when generated."""
+                items = details or [{"name": dx, "rationale": ""} for dx in diagnoses]
+                markdown = format_differential_markdown(items)
+                rendered_differential["markdown"] = markdown
+                rendered_differential["items"] = items
+                with diff_placeholder.container():
+                    stream_markdown(markdown)
+
+            # Validate configuration
+            status_cb("Validating configuration...")
+            validation = validate_config()
+            if not validation["valid"]:
+                status_box.update(label="Configuration error", state="error")
+                st.error("Configuration error")
+                st.markdown("\n".join([f"- {err}" for err in validation["errors"]]))
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "type": "error",
+                    "content": "Configuration error: " + "; ".join(validation["errors"])
+                })
+                return
+
+            # Require MongoDB - no fallback to sample data
+            status_cb("Checking database connection...")
+            client = MongoDBClient()
+            if not client.connect():
+                status_box.update(label="Database connection failed", state="error")
+                st.error("MongoDB connection failed")
+                st.markdown(
+                    "Ensure MongoDB is installed, running, and initialized with data."
+                )
+                st.markdown(f"Connection URI: `{MONGODB_URI}`")
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "type": "error",
+                    "content": "MongoDB connection failed. Ensure MongoDB is running and initialized."
+                })
+                return
+            client.close()
+
+            result = run_rag_pipeline(
+                prompt,
+                status_callback=status_cb,
+                differential_callback=on_differential_ready
+            )
+            if not result.get("success"):
+                error_message = result.get("error", "Unknown error occurred")
+                status_box.update(label="Request failed", state="error")
+                st.error(error_message)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "type": "error",
+                    "content": error_message
+                })
+                return
+
+            status_box.update(label="Response ready", state="complete")
+
+            # Get differential items for session state (already displayed by callback)
+            differential_items = rendered_differential["items"] or result.get("differential_details") or [
+                {"name": dx, "rationale": ""} for dx in result.get("differential", [])
+            ]
+            differential_markdown = rendered_differential["markdown"] or format_differential_markdown(differential_items)
+
+        with st.chat_message("assistant"):
+            render_strategy_message(result)
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "type": "differential",
+            "content": differential_markdown,
+            "items": differential_items
+        })
+        st.session_state.messages.append({
+            "role": "assistant",
+            "type": "strategy",
+            "result": result
+        })
+
     # Footer
     st.markdown("---")
     st.markdown("""
-    <div style="text-align: center; color: #666; font-size: 0.9rem;">
+    <div style="text-align: center; color: var(--clinic-gray); font-size: 0.85rem;">
         <p>
-            📚 Data source: McGee's Evidence-Based Physical Diagnosis, 3rd Edition<br>
-            🔬 This tool is for educational purposes only<br>
-            ⚕️ Always consult qualified healthcare professionals for patient care
+            Data source: McGee's Evidence-Based Physical Diagnosis, 3rd Edition<br>
+            Educational use only. Always consult qualified healthcare professionals for patient care.
         </p>
     </div>
     """, unsafe_allow_html=True)
