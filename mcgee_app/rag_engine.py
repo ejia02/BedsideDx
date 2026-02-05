@@ -1050,7 +1050,7 @@ Patient Presentation:
 {symptoms}
 
 Instructions:
-1. Include both common and serious (don't miss) diagnoses
+1. Include common, serious (don't miss), and (only if absolutely appropriate) rare-but-fitting diagnoses that match the presentation
 2. Provide 1-2 concise sentences of clinical rationale per diagnosis
 3. Return ONLY JSON with this schema:
 {{

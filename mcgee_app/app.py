@@ -240,6 +240,28 @@ def load_custom_css():
     hr {
         margin: 1rem 0;
     }
+
+    /* Sidebar compactness */
+    section[data-testid="stSidebar"] .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    section[data-testid="stSidebar"] h3 {
+        font-size: 0.9rem;
+        margin: 0.5rem 0 0.25rem 0;
+    }
+    section[data-testid="stSidebar"] p {
+        font-size: 0.82rem;
+        line-height: 1.35;
+        margin-bottom: 0.4rem;
+    }
+    section[data-testid="stSidebar"] hr {
+        margin: 0.5rem 0;
+    }
+    section[data-testid="stSidebar"] [data-testid="stAlert"] {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.82rem;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -300,7 +322,6 @@ def display_config_status():
             st.warning(warning)
         
         # Check MongoDB connection
-        st.markdown("---")
         st.markdown("### Database Status")
         
         if PYMONGO_AVAILABLE:
@@ -330,7 +351,6 @@ def display_config_status():
             st.error("Install with: `pip install pymongo`")
         
         # OpenAI status
-        st.markdown("---")
         st.markdown("### AI Status")
         
         if OPENAI_AVAILABLE:
