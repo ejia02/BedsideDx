@@ -47,6 +47,34 @@ except ImportError as e:
     IMPORTS_SUCCESSFUL = False
     IMPORT_ERROR = str(e)
 
+# Import user authentication module (graceful degradation)
+try:
+    from user_auth import (
+        MongoUserRepository,
+        validate_username,
+        validate_email,
+        validate_phone,
+        validate_password,
+        BCRYPT_AVAILABLE,
+    )
+    USER_AUTH_AVAILABLE = True
+except ImportError as e:
+    USER_AUTH_AVAILABLE = False
+    logger.warning("user_auth module not available: %s", e)
+
+# Import chat history module (graceful degradation)
+try:
+    from chat_history import (
+        MongoChatHistoryRepository,
+        serialize_message,
+        deserialize_message,
+        generate_conversation_title,
+    )
+    CHAT_HISTORY_AVAILABLE = True
+except ImportError as e:
+    CHAT_HISTORY_AVAILABLE = False
+    logger.warning("chat_history module not available: %s", e)
+
 
 # Custom CSS for streamlined styling
 def load_custom_css():
@@ -499,6 +527,346 @@ def init_session_state():
     """Initialize chat session state."""
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "current_conversation_id" not in st.session_state:
+        st.session_state.current_conversation_id = None
+
+
+def init_auth_state():
+    """Initialize authentication session state.
+
+    Sets default values for auth-related keys if they do not already exist.
+    """
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    if "current_user" not in st.session_state:
+        st.session_state.current_user = None
+
+
+def _mask_value(value: str, visible_chars: int = 3) -> str:
+    """Mask a PII value for display, showing only the last few characters.
+
+    Args:
+        value: The string to mask.
+        visible_chars: Number of trailing characters to keep visible.
+
+    Returns:
+        Masked string, e.g. ``***1234``.
+    """
+    if not value:
+        return ""
+    if len(value) <= visible_chars:
+        return "*" * len(value)
+    return "*" * (len(value) - visible_chars) + value[-visible_chars:]
+
+
+def _get_user_repo() -> Optional["MongoUserRepository"]:
+    """Get a connected MongoUserRepository, or None on failure.
+
+    Returns:
+        A connected MongoUserRepository instance, or None if unavailable.
+    """
+    if not USER_AUTH_AVAILABLE:
+        return None
+    try:
+        repo = MongoUserRepository()
+        if repo.connect():
+            return repo
+        logger.warning("Could not connect to users collection")
+        return None
+    except Exception as e:
+        logger.warning("Failed to initialize user repository: %s", e)
+        return None
+
+
+def _get_chat_repo() -> Optional["MongoChatHistoryRepository"]:
+    """Get a connected MongoChatHistoryRepository, or None on failure.
+
+    Returns:
+        A connected MongoChatHistoryRepository instance, or None if unavailable.
+    """
+    if not CHAT_HISTORY_AVAILABLE:
+        return None
+    try:
+        repo = MongoChatHistoryRepository()
+        if repo.connect():
+            return repo
+        logger.warning("Could not connect to chat history collections")
+        return None
+    except Exception as e:
+        logger.warning("Failed to initialize chat history repository: %s", e)
+        return None
+
+
+def _format_relative_time(dt) -> str:
+    """Format a datetime as a human-readable relative timestamp.
+
+    Args:
+        dt: A timezone-aware datetime in UTC.
+
+    Returns:
+        A string like "2h ago", "Yesterday", or "Feb 10".
+    """
+    from datetime import datetime as _dt, timezone as _tz
+
+    now = _dt.now(_tz.utc)
+    # MongoDB may return offset-naive datetimes; treat them as UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_tz.utc)
+    diff = now - dt
+    seconds = diff.total_seconds()
+
+    if seconds < 60:
+        return "Just now"
+    if seconds < 3600:
+        minutes = int(seconds // 60)
+        return f"{minutes}m ago"
+    if seconds < 86400:
+        hours = int(seconds // 3600)
+        return f"{hours}h ago"
+    if seconds < 172800:
+        return "Yesterday"
+    if seconds < 604800:
+        days = int(seconds // 86400)
+        return f"{days}d ago"
+    # Older than a week — show date
+    return dt.strftime("%b %d")
+
+
+def display_conversation_sidebar():
+    """Display the conversation list in the sidebar.
+
+    Shows a 'New Conversation' button and a scrollable list of the user's
+    past conversations with load and delete actions.
+    """
+    username = st.session_state.get("current_user")
+    if not username:
+        return
+
+    with st.sidebar:
+        st.markdown("### Conversations")
+
+        # New Conversation button
+        if st.button("＋ New Conversation", use_container_width=True, key="new_conv_btn"):
+            st.session_state.messages = []
+            st.session_state.current_conversation_id = None
+            st.rerun()
+
+        repo = _get_chat_repo()
+        if repo is None:
+            return
+
+        try:
+            conversations = repo.get_conversations_for_user(username)
+        except Exception:
+            conversations = []
+
+        if not conversations:
+            st.caption("No past conversations yet.")
+            repo.close()
+            return
+
+        for conv in conversations:
+            conv_id = conv.get("conversation_id", "")
+            title = conv.get("title", "Untitled")
+            updated_at = conv.get("updated_at")
+
+            # Truncate title for display
+            display_title = title if len(title) <= 50 else title[:47] + "..."
+            time_label = _format_relative_time(updated_at) if updated_at else ""
+
+            is_active = st.session_state.current_conversation_id == conv_id
+
+            col_main, col_del = st.columns([5, 1])
+            with col_main:
+                btn_label = f"{'> ' if is_active else ''}{display_title}"
+                if time_label:
+                    btn_label += f"  *{time_label}*"
+                if st.button(
+                    btn_label,
+                    key=f"conv_{conv_id}",
+                    use_container_width=True,
+                ):
+                    # Load this conversation
+                    try:
+                        db_messages = repo.get_messages(conv_id, username)
+                        session_messages = [
+                            deserialize_message(m) for m in db_messages
+                        ]
+                        st.session_state.messages = session_messages
+                        st.session_state.current_conversation_id = conv_id
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to load conversation %s: %s", conv_id, exc
+                        )
+                    st.rerun()
+
+            with col_del:
+                if st.button("🗑️", key=f"del_{conv_id}"):
+                    try:
+                        repo.delete_conversation(conv_id, username)
+                        if st.session_state.current_conversation_id == conv_id:
+                            st.session_state.messages = []
+                            st.session_state.current_conversation_id = None
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to delete conversation %s: %s", conv_id, exc
+                        )
+                    st.rerun()
+
+        repo.close()
+
+
+def display_auth_page():
+    """Display the login / register page when the user is not authenticated."""
+    display_header()
+
+    login_tab, register_tab = st.tabs(["Login", "Register"])
+
+    # ---- Login tab ----
+    with login_tab:
+        with st.form("login_form"):
+            st.markdown("#### Sign In")
+            login_username = st.text_input("Username", key="login_username")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            login_submit = st.form_submit_button("Sign In", use_container_width=True)
+
+        if login_submit:
+            if not login_username or not login_password:
+                st.error("Please enter both username and password.")
+            else:
+                repo = _get_user_repo()
+                if repo is None:
+                    st.error("Authentication service is temporarily unavailable. Please try again later.")
+                else:
+                    result = repo.authenticate(login_username.strip(), login_password)
+                    repo.close()
+                    if result["success"]:
+                        st.session_state.authenticated = True
+                        st.session_state.current_user = login_username.strip()
+                        st.rerun()
+                    else:
+                        st.error(result.get("error", "Login failed."))
+
+    # ---- Register tab ----
+    with register_tab:
+        with st.form("register_form"):
+            st.markdown("#### Create Account")
+            reg_username = st.text_input("Username", key="reg_username")
+            reg_email = st.text_input("Email", key="reg_email")
+            reg_phone = st.text_input(
+                "Phone Number (E.164 format, e.g. +14155551234)",
+                key="reg_phone",
+            )
+            reg_password = st.text_input("Password", type="password", key="reg_password")
+            reg_confirm = st.text_input("Confirm Password", type="password", key="reg_confirm")
+            register_submit = st.form_submit_button("Create Account", use_container_width=True)
+
+        if register_submit:
+            # Client-side validation
+            errors: List[str] = []
+            valid, msg = validate_username(reg_username)
+            if not valid:
+                errors.append(msg)
+            valid, msg = validate_email(reg_email)
+            if not valid:
+                errors.append(msg)
+            valid, msg = validate_phone(reg_phone)
+            if not valid:
+                errors.append(msg)
+            valid, msg = validate_password(reg_password)
+            if not valid:
+                errors.append(msg)
+            if reg_password != reg_confirm:
+                errors.append("Passwords do not match.")
+
+            if errors:
+                for err in errors:
+                    st.error(err)
+            else:
+                repo = _get_user_repo()
+                if repo is None:
+                    st.error("Authentication service is temporarily unavailable. Please try again later.")
+                else:
+                    result = repo.create_user(
+                        username=reg_username.strip(),
+                        email=reg_email.strip(),
+                        phone_number=reg_phone.strip(),
+                        password=reg_password,
+                    )
+                    repo.close()
+                    if result["success"]:
+                        st.success("Account created successfully! You can now sign in.")
+                    else:
+                        st.error(result.get("error", "Registration failed."))
+
+
+def display_user_profile():
+    """Display user profile section in the sidebar."""
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown(f"### Signed in as: {st.session_state.current_user}")
+
+        # Profile section
+        with st.expander("My Profile", expanded=False):
+            repo = _get_user_repo()
+            if repo is not None:
+                user = repo.get_user_by_username(st.session_state.current_user)
+                repo_ref = repo  # keep reference for update
+            else:
+                user = None
+                repo_ref = None
+
+            if user:
+                st.text(f"Email: {_mask_value(user.get('email', ''), 5)}")
+                st.text(f"Phone: {_mask_value(user.get('phone_number', ''), 4)}")
+
+                st.markdown("##### Update Profile")
+                with st.form("profile_form"):
+                    new_email = st.text_input("New Email", key="profile_email")
+                    new_phone = st.text_input(
+                        "New Phone (E.164)", key="profile_phone"
+                    )
+                    update_submit = st.form_submit_button("Update")
+
+                if update_submit:
+                    fields = {}
+                    if new_email.strip():
+                        fields["email"] = new_email.strip()
+                    if new_phone.strip():
+                        fields["phone_number"] = new_phone.strip()
+                    if fields and repo_ref is not None:
+                        ok, err = repo_ref.update_user_profile(
+                            st.session_state.current_user, fields
+                        )
+                        if ok:
+                            st.success("Profile updated.")
+                            st.rerun()
+                        else:
+                            st.error(err)
+                    elif not fields:
+                        st.warning("Enter at least one field to update.")
+
+                # Notification preferences (placeholder)
+                st.markdown("##### Notification Preferences")
+                st.checkbox(
+                    "Enable notifications (coming soon)",
+                    value=user.get("notifications_enabled", False),
+                    disabled=True,
+                    key="notif_enabled",
+                )
+            else:
+                st.info("Profile data unavailable.")
+
+            if repo_ref is not None:
+                repo_ref.close()
+
+        # Logout button
+        if st.button("Sign Out", use_container_width=True):
+            st.session_state.authenticated = False
+            st.session_state.current_user = None
+            st.session_state.messages = []
+            st.session_state.current_conversation_id = None
+            st.rerun()
 
 
 def format_differential_markdown(differential_items: List[Dict[str, str]]) -> str:
@@ -881,8 +1249,17 @@ def main():
         st.info("Please ensure all dependencies are installed: pip install -r requirements.txt")
         return
     
-    # Initialize session state for chat history
+    # Initialize session state for chat history and auth
     init_session_state()
+    init_auth_state()
+
+    # ---- Auth gate ----
+    # If user_auth is available, require authentication before showing the chat.
+    # If user_auth is NOT available (import failed), skip auth and let users
+    # access the chat directly (graceful degradation).
+    if USER_AUTH_AVAILABLE and not st.session_state.authenticated:
+        display_auth_page()
+        return
 
     prompt = st.chat_input("Describe the patient's presenting symptoms and context...")
     if prompt and not prompt.strip():
@@ -897,6 +1274,10 @@ def main():
         display_irb_warning()
 
     # Sidebar content
+    if USER_AUTH_AVAILABLE and st.session_state.authenticated:
+        if CHAT_HISTORY_AVAILABLE:
+            display_conversation_sidebar()
+        display_user_profile()
     display_config_status()
     display_sidebar_info()
     display_example_cases()
@@ -1004,17 +1385,54 @@ def main():
         with st.chat_message("assistant"):
             render_strategy_message(result)
 
-        st.session_state.messages.append({
+        # Build session state messages
+        user_msg = {"role": "user", "content": prompt}
+        diff_msg = {
             "role": "assistant",
             "type": "differential",
             "content": differential_markdown,
-            "items": differential_items
-        })
-        st.session_state.messages.append({
+            "items": differential_items,
+        }
+        strategy_msg = {
             "role": "assistant",
             "type": "strategy",
-            "result": result
-        })
+            "result": result,
+        }
+
+        st.session_state.messages.append(diff_msg)
+        st.session_state.messages.append(strategy_msg)
+
+        # ---- Persist to MongoDB ----
+        if CHAT_HISTORY_AVAILABLE and st.session_state.get("current_user"):
+            try:
+                chat_repo = _get_chat_repo()
+                if chat_repo is not None:
+                    cur_username = st.session_state.current_user
+
+                    # Create a new conversation if needed
+                    if st.session_state.current_conversation_id is None:
+                        title = generate_conversation_title(prompt)
+                        conv = chat_repo.create_conversation(cur_username, title)
+                        if conv:
+                            st.session_state.current_conversation_id = conv["conversation_id"]
+
+                    conv_id = st.session_state.current_conversation_id
+                    if conv_id:
+                        # Save user message
+                        u_type, u_text, u_json = serialize_message(user_msg)
+                        chat_repo.add_message(conv_id, cur_username, "user", u_type, u_text, u_json)
+
+                        # Save differential message
+                        d_type, d_text, d_json = serialize_message(diff_msg)
+                        chat_repo.add_message(conv_id, cur_username, "assistant", d_type, d_text, d_json)
+
+                        # Save strategy message
+                        s_type, s_text, s_json = serialize_message(strategy_msg)
+                        chat_repo.add_message(conv_id, cur_username, "assistant", s_type, s_text, s_json)
+
+                    chat_repo.close()
+            except Exception as e:
+                logger.warning("Failed to persist chat messages: %s", e)
 
     # Footer
     st.markdown("---")

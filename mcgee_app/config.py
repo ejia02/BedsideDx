@@ -138,6 +138,34 @@ Always consult with qualified healthcare professionals for actual patient care.
 """
 
 # =============================================================================
+# USER AUTHENTICATION CONFIGURATION
+# =============================================================================
+
+USERS_COLLECTION_NAME = "users"
+LOGIN_ATTEMPTS_COLLECTION_NAME = "login_attempts"
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "")
+
+# Rate limiting
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_ATTEMPT_WINDOW_MINUTES = 15
+
+# Password policy
+PASSWORD_MIN_LENGTH = 8
+
+# Username constraints
+USERNAME_MIN_LENGTH = 3
+USERNAME_MAX_LENGTH = 30
+
+# =============================================================================
+# CHAT HISTORY CONFIGURATION
+# =============================================================================
+
+CONVERSATIONS_COLLECTION_NAME = "conversations"
+MESSAGES_COLLECTION_NAME = "messages"
+MAX_SIDEBAR_CONVERSATIONS = 20
+CONVERSATION_TITLE_MAX_LENGTH = 80
+
+# =============================================================================
 # LOGGING CONFIGURATION
 # =============================================================================
 
@@ -160,6 +188,9 @@ def validate_config() -> dict:
     
     if MONGODB_URI == "mongodb://localhost:27017":
         warnings.append("Using default MongoDB URI. Set MONGODB_URI for production.")
+    
+    if not SESSION_SECRET_KEY:
+        warnings.append("SESSION_SECRET_KEY is not set. Set it via environment variable for production.")
     
     if not PDF_FILE_PATH.exists():
         errors.append(f"PDF file not found at: {PDF_FILE_PATH}")
